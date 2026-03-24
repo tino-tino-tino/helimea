@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>HELIMEA — Carnet d'Ascensions</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16,2 30,30 2,30' fill='%233050a0'/><polygon points='16,8 24,30 8,30' fill='%234a6abf'/><polygon points='10,16 16,8 22,16 20,16 20,30 12,30 12,16' fill='white' opacity='0.3'/></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;1,300&family=Inconsolata:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- ══════════════════════════════════════════════════
+  FIREBASE — REMPLACE LES VALEURS CI-DESSOUS
+  1. Va sur https://console.firebase.google.com
+  2. Crée un projet (gratuit)
+  3. Ajoute une "Web app"
+  4. Active Authentication → Email/Password
+  5. Active Firestore Database
+  6. Copie ta config ici
+══════════════════════════════════════════════════ -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, setDoc, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+
+// ══ TA CONFIG FIREBASE — REMPLACE ICI ══
+const firebaseConfig = {
+  apiKey:            "AIzaSyDX6gtQBLwpke9g93mu9jBW_C3iaTy163k",
+  authDomain:        "helimeainteractif-e77b3.firebaseapp.com",
+  projectId:         "helimeainteractif-e77b3",
+  storageBucket:     "helimeainteractif-e77b3.firebasestorage.app",
+  messagingSenderId: "187550061938",
+  appId:             "1:187550061938:web:d70b98052f9ddbad6d39eb"
+};
+// ════════════════════════════════════════
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+
+// ── Expo globale pour les fonctions UI ──
+window._FB = { auth, db, collection, addDoc, getDocs, deleteDoc, doc, setDoc, query, where, orderBy, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile };
+window._FB.ready = true;
+window.dispatchEvent(new Event('fb-ready'));
+</script>
+
+<style>
+/* ══════════════════════════════════════════════════
+   RESET & VARS
+══════════════════════════════════════════════════ */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --paper: #ede6d0;
+  --ink:   #2a2015;
+  --gold:  #c4a060;
+  --red:   #c84030;
+  --muted: #a08040;
+  --blue:  #3050a0;
+  --dark:  #1a1410;
+}
+html, body { width:100%; height:100%; overflow:hidden; background:var(--paper); color:var(--ink); font-family:'Inconsolata',monospace; font-weight:300; cursor:none; }
+
+/* ══ CURSEUR ══ */
+#cur { position:fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:9999; }
+#cur::before { content:''; position:absolute; width:14px; height:14px; border:1.5px solid var(--red); border-radius:50%; transform:translate(-50%,-50%); }
+#cur::after  { content:''; position:absolute; width:3px; height:3px; background:var(--red); border-radius:50%; transform:translate(-50%,-50%); }
+#cur .ch { position:absolute; width:26px; height:1px; background:var(--red); transform:translate(-50%,-50%); }
+#cur .cv { position:absolute; width:1px; height:26px; background:var(--red); transform:translate(-50%,-50%); }
+
+/* ══ ÉCRAN AUTH ══ */
+#auth-screen {
+  position:fixed; inset:0; z-index:2000;
+  background:var(--dark);
+  display:flex; align-items:center; justify-content:center;
+  transition:opacity .5s, transform .5s;
+}
+#auth-screen.hide { opacity:0; pointer-events:none; transform:scale(1.03); }
+
+.auth-box {
+  background:var(--paper);
+  width:100%; max-width:400px;
+  padding:48px 40px;
+  position:relative;
+  border-top:3px solid var(--gold);
+}
+.auth-logo {
+  font-family:'Cormorant Garamond',serif;
+  font-weight:600; font-size:1.6rem;
+  letter-spacing:.4em; text-transform:uppercase;
+  text-align:center; margin-bottom:6px;
+}
+.auth-sub {
+  text-align:center; font-size:.5rem;
+  letter-spacing:.5em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:36px;
+}
+.auth-tabs {
+  display:flex; gap:0; margin-bottom:32px;
+  border-bottom:1px solid rgba(196,160,96,.3);
+}
+.auth-tab {
+  flex:1; text-align:center; padding:10px;
+  font-size:.5rem; letter-spacing:.4em; text-transform:uppercase;
+  color:var(--muted); cursor:none;
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px; transition:all .2s;
+  background:none; border-left:none; border-right:none; border-top:none;
+}
+.auth-tab.active { color:var(--red); border-bottom-color:var(--red); }
+
+.auth-form { display:flex; flex-direction:column; gap:16px; }
+.auth-field { display:flex; flex-direction:column; gap:6px; }
+.auth-field label { font-size:.46rem; letter-spacing:.4em; text-transform:uppercase; color:var(--muted); }
+.auth-field input {
+  background:rgba(196,160,96,.08);
+  border:1px solid rgba(196,160,96,.3);
+  padding:12px 14px;
+  font-family:'Inconsolata',monospace; font-size:.75rem;
+  color:var(--ink); outline:none; cursor:none;
+  transition:border-color .2s;
+}
+.auth-field input:focus { border-color:var(--gold); }
+.auth-btn {
+  margin-top:8px; padding:14px;
+  background:var(--ink); color:var(--paper);
+  border:none; font-family:'Inconsolata',monospace;
+  font-size:.55rem; letter-spacing:.4em; text-transform:uppercase;
+  cursor:none; transition:background .2s;
+}
+.auth-btn:hover { background:var(--red); }
+.auth-err {
+  font-size:.52rem; color:var(--red); text-align:center;
+  min-height:20px; letter-spacing:.05em;
+}
+
+/* ══ HUD ══ */
+#hud {
+  position:fixed; top:0; left:0; right:0; z-index:500; height:50px;
+  display:flex; align-items:stretch;
+  background:rgba(237,230,208,.97);
+  border-bottom:1px solid rgba(196,160,96,.45);
+  backdrop-filter:blur(8px);
+}
+.hud-brand { display:flex; align-items:center; padding:0 20px; border-right:1px solid rgba(196,160,96,.3); flex-shrink:0; }
+.hud-brand span { font-family:'Cormorant Garamond',serif; font-weight:600; font-size:1.4rem; letter-spacing:.35em; text-transform:uppercase; }
+.hud-block { padding:0 14px; display:flex; flex-direction:column; justify-content:center; border-right:1px solid rgba(196,160,96,.18); min-width:100px; }
+.hud-label { font-size:.36rem; letter-spacing:.5em; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
+.hud-val   { font-size:.78rem; letter-spacing:.05em; font-weight:600; font-variant-numeric:tabular-nums; }
+.hud-right { margin-left:auto; display:flex; align-items:stretch; }
+.hud-user  { display:flex; align-items:center; gap:10px; padding:0 16px; border-left:1px solid rgba(196,160,96,.18); }
+.hud-user-name { font-size:.48rem; letter-spacing:.2em; color:var(--muted); }
+.hud-btn {
+  display:flex; align-items:center; padding:0 14px;
+  border-left:1px solid rgba(196,160,96,.18);
+  font-size:.44rem; letter-spacing:.3em; text-transform:uppercase;
+  color:var(--muted); cursor:none; background:none; border-top:none; border-right:none; border-bottom:none;
+  transition:color .2s, background .2s;
+}
+.hud-btn:hover { color:var(--ink); background:rgba(196,160,96,.1); }
+.hud-btn.accent { color:var(--red); }
+.hud-btn.accent:hover { background:rgba(200,64,48,.08); }
+
+/* ══ BARRE ALT ══ */
+#altbar  { position:fixed; left:0; top:50px; bottom:0; width:3px; z-index:400; background:rgba(196,160,96,.1); }
+#altfill { position:absolute; bottom:0; left:0; width:100%; background:linear-gradient(to top,#3050a0,#7aaad0,#c8e8ff); height:0; transition:height .5s; }
+
+/* ══ MAP ══ */
+#map { position:fixed; top:50px; left:0; right:0; bottom:0; z-index:10; }
+#map .leaflet-tile-pane { filter:grayscale(100%) contrast(1.1) brightness(.95); }
+#ov-sky { position:fixed; top:50px; left:0; right:0; bottom:0; z-index:21; pointer-events:none; background:transparent; transition:background 1s; }
+#ov-fog { position:fixed; top:50px; left:0; right:0; bottom:0; z-index:30; pointer-events:none; background:linear-gradient(to bottom,transparent,rgba(210,228,248,.7)); opacity:0; transition:opacity 1.5s; }
+#snow   { position:fixed; top:50px; left:0; right:0; bottom:0; z-index:35; pointer-events:none; opacity:0; transition:opacity 2s; }
+.cloud  { position:fixed; pointer-events:none; z-index:25; opacity:0; transition:opacity 2s; }
+.cloud.show { opacity:1; }
+.cloud svg { filter:blur(5px); }
+
+/* ══ TOOLTIP ══ */
+#tt { position:fixed; z-index:800; background:var(--ink); color:var(--paper); font-size:.48rem; letter-spacing:.15em; padding:6px 12px; pointer-events:none; opacity:0; transition:opacity .15s; border-left:2px solid var(--red); white-space:nowrap; }
+#tt.show { opacity:1; }
+
+/* ══ MESSAGE ALT ══ */
+#altmsg { position:fixed; left:50%; bottom:70px; transform:translateX(-50%) translateY(10px); z-index:450; pointer-events:none; font-family:'Cormorant Garamond',serif; font-size:1.2rem; font-style:italic; color:var(--ink); background:rgba(237,230,208,.93); border-left:3px solid var(--red); padding:9px 22px; opacity:0; transition:opacity .7s, transform .7s; white-space:nowrap; backdrop-filter:blur(4px); }
+#altmsg.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ══ COORDS ══ */
+#coords { position:fixed; bottom:18px; left:18px; z-index:400; background:rgba(237,230,208,.95); border:1px solid rgba(196,160,96,.4); padding:8px 12px; font-size:.44rem; letter-spacing:.2em; color:var(--muted); line-height:1.9; }
+#coords b { color:var(--ink); font-weight:600; font-size:.54rem; }
+
+/* ══ INSTRUMENTS ══ */
+#instruments { position:fixed; bottom:18px; right:18px; z-index:400; display:flex; gap:8px; align-items:flex-end; }
+.instr { background:rgba(237,230,208,.97); border:1px solid rgba(196,160,96,.5); padding:9px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.instr-lbl { font-size:.33rem; letter-spacing:.4em; text-transform:uppercase; color:var(--muted); }
+.instr-val { font-size:.48rem; letter-spacing:.1em; color:var(--muted); }
+
+/* ══ MARQUEURS HELIMEA ══ */
+.mk-wrap { cursor:none !important; }
+.mk-box { background:rgba(200,64,48,.92); border-left:3px solid #fff; padding:4px 9px; font-size:.42rem; letter-spacing:.12em; white-space:nowrap; box-shadow:0 2px 14px rgba(200,64,48,.55); transition:transform .15s; }
+.mk-box:hover { transform:translateY(-2px); }
+.mk-name { font-weight:600; font-size:.46rem; color:#3050a0; }
+.mk-alt  { color:rgba(255,255,255,.75); font-size:.38rem; }
+.mk-dot  { width:10px; height:10px; border-radius:50%; margin:3px auto 0; background:#c84030; box-shadow:0 0 0 3px rgba(200,64,48,.3),0 0 0 1px #fff; }
+
+/* ══ MARQUEURS UTILISATEUR ══ */
+.user-mk-wrap { cursor:none !important; }
+.user-mk-pin {
+  width:14px; height:14px; border-radius:50%;
+  background:var(--blue); border:2px solid #fff;
+  box-shadow:0 0 0 3px rgba(48,80,160,.3),0 2px 8px rgba(0,0,0,.3);
+  transition:transform .15s;
+}
+.user-mk-pin:hover { transform:scale(1.3); }
+.user-mk-label {
+  position:absolute; top:-26px; left:50%;
+  transform:translateX(-50%);
+  background:var(--blue); color:#fff;
+  font-family:'Inconsolata',monospace; font-size:.4rem;
+  letter-spacing:.1em; padding:2px 7px; white-space:nowrap;
+  box-shadow:0 1px 6px rgba(0,0,0,.3);
+}
+.user-mk-label::after { content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:4px solid transparent; border-top-color:var(--blue); }
+
+/* ══ FAB — BOUTON AJOUTER ══ */
+#fab {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  z-index:400; display:none;
+  background:var(--blue); color:#fff;
+  border:none; font-family:'Inconsolata',monospace;
+  font-size:.52rem; letter-spacing:.35em; text-transform:uppercase;
+  padding:13px 28px; cursor:none;
+  box-shadow:0 4px 20px rgba(48,80,160,.4);
+  transition:background .2s, transform .2s, box-shadow .2s;
+}
+#fab:hover { background:#1a3070; transform:translateX(-50%) translateY(-2px); box-shadow:0 6px 28px rgba(48,80,160,.5); }
+#fab.visible { display:block; }
+
+/* ══ SIDEBAR CARNET ══ */
+#carnet {
+  position:fixed; left:0; top:50px; bottom:0; width:360px;
+  background:rgba(237,230,208,.98);
+  border-right:1px solid rgba(196,160,96,.4);
+  z-index:450; transform:translateX(-100%);
+  transition:transform .5s cubic-bezier(.16,1,.3,1);
+  display:flex; flex-direction:column;
+}
+#carnet.open { transform:translateX(0); }
+.carnet-header {
+  padding:18px 20px 14px;
+  border-bottom:1px solid rgba(196,160,96,.3);
+  display:flex; align-items:center; justify-content:space-between;
+  flex-shrink:0;
+}
+.carnet-title { font-family:'Cormorant Garamond',serif; font-size:1.3rem; font-weight:600; }
+.carnet-close { background:none; border:1px solid rgba(196,160,96,.3); padding:5px 10px; font-family:'Inconsolata',monospace; font-size:.44rem; letter-spacing:.2em; color:var(--muted); cursor:none; transition:all .2s; }
+.carnet-close:hover { background:var(--ink); color:var(--paper); }
+
+.carnet-stats {
+  display:grid; grid-template-columns:1fr 1fr 1fr;
+  gap:1px; background:rgba(196,160,96,.2);
+  border-bottom:1px solid rgba(196,160,96,.2);
+  flex-shrink:0;
+}
+.cs-block { background:var(--paper); padding:12px; text-align:center; }
+.cs-num { font-size:1.2rem; font-weight:600; font-family:'Cormorant Garamond',serif; color:var(--blue); }
+.cs-label { font-size:.36rem; letter-spacing:.4em; text-transform:uppercase; color:var(--muted); margin-top:2px; }
+
+.carnet-list { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+
+.ascension-card {
+  background:#fff; border:1px solid rgba(196,160,96,.2);
+  padding:14px; position:relative; cursor:none;
+  transition:border-color .2s, transform .15s;
+}
+.ascension-card:hover { border-color:var(--blue); transform:translateX(3px); }
+.asc-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+.asc-name { font-family:'Cormorant Garamond',serif; font-size:1.05rem; font-weight:600; line-height:1.1; }
+.asc-date { font-size:.4rem; letter-spacing:.3em; color:var(--muted); }
+.asc-tags { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+.asc-tag { font-size:.38rem; letter-spacing:.2em; padding:2px 7px; background:rgba(48,80,160,.08); color:var(--blue); border:1px solid rgba(48,80,160,.2); }
+.asc-note { font-size:.52rem; line-height:1.7; color:#5a5040; font-style:italic; }
+.asc-imgs { display:flex; gap:4px; margin-top:8px; overflow:hidden; }
+.asc-img-thumb { width:52px; height:52px; object-fit:cover; border:1px solid rgba(196,160,96,.2); filter:grayscale(20%); flex-shrink:0; }
+.asc-del {
+  position:absolute; top:10px; right:10px;
+  background:none; border:none; color:rgba(200,64,48,.3);
+  font-size:.7rem; cursor:none; transition:color .2s; line-height:1;
+  padding:2px 5px;
+}
+.asc-del:hover { color:var(--red); }
+.asc-locate { position:absolute; bottom:10px; right:10px; background:none; border:1px solid rgba(48,80,160,.2); color:var(--blue); font-family:'Inconsolata',monospace; font-size:.38rem; letter-spacing:.2em; padding:3px 8px; cursor:none; transition:all .2s; }
+.asc-locate:hover { background:var(--blue); color:#fff; }
+.asc-actions { display:flex; gap:6px; margin-top:10px; }
+.asc-action-btn { flex:1; padding:7px; border:1px solid rgba(196,160,96,.25); background:none; font-family:'Inconsolata',monospace; font-size:.42rem; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); cursor:none; transition:all .2s; text-align:center; }
+.asc-action-btn:hover { border-color:var(--blue); color:var(--blue); background:rgba(48,80,160,.04); }
+.asc-action-btn.danger:hover { border-color:var(--red); color:var(--red); background:rgba(200,64,48,.04); }
+
+.carnet-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted); }
+.carnet-empty-icon { font-size:2rem; opacity:.3; }
+.carnet-empty p { font-size:.52rem; letter-spacing:.15em; text-align:center; line-height:1.8; }
+
+/* ══ MODAL AJOUT REPÈRE ══ */
+#modal-overlay {
+  position:fixed; inset:0; z-index:1000;
+  background:rgba(26,20,16,.7); backdrop-filter:blur(4px);
+  display:none; align-items:center; justify-content:center;
+}
+#modal-overlay.open { display:flex; }
+.modal {
+  background:var(--paper); width:100%; max-width:520px;
+  max-height:90vh; overflow-y:auto;
+  border-top:3px solid var(--blue);
+  position:relative;
+}
+.modal-header { padding:20px 24px 16px; border-bottom:1px solid rgba(196,160,96,.3); }
+.modal-title { font-family:'Cormorant Garamond',serif; font-size:1.4rem; font-weight:600; margin-bottom:4px; }
+.modal-sub { font-size:.45rem; letter-spacing:.3em; text-transform:uppercase; color:var(--muted); }
+.modal-close { position:absolute; top:16px; right:16px; background:none; border:1px solid rgba(196,160,96,.3); padding:5px 10px; font-family:'Inconsolata',monospace; font-size:.44rem; letter-spacing:.2em; color:var(--muted); cursor:none; transition:all .2s; }
+.modal-close:hover { background:var(--ink); color:var(--paper); }
+
+.modal-body { padding:20px 24px; display:flex; flex-direction:column; gap:18px; }
+
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.form-field { display:flex; flex-direction:column; gap:7px; }
+.form-field.full { grid-column:span 2; }
+.form-field label { font-size:.44rem; letter-spacing:.45em; text-transform:uppercase; color:var(--muted); }
+.form-field input, .form-field textarea, .form-field select {
+  background:rgba(196,160,96,.07); border:1px solid rgba(196,160,96,.3);
+  padding:10px 12px; font-family:'Inconsolata',monospace; font-size:.72rem;
+  color:var(--ink); outline:none; cursor:none; transition:border-color .2s;
+  resize:none;
+}
+.form-field input:focus, .form-field textarea:focus, .form-field select:focus { border-color:var(--blue); }
+.form-field select option { background:var(--paper); }
+
+/* Coordonnées */
+.coord-section { background:rgba(48,80,160,.04); border:1px solid rgba(48,80,160,.15); padding:14px; }
+.coord-title { font-size:.44rem; letter-spacing:.4em; text-transform:uppercase; color:var(--blue); margin-bottom:12px; }
+.coord-hint { font-size:.46rem; color:var(--muted); line-height:1.7; margin-top:8px; }
+.coord-map-btn {
+  margin-top:10px; width:100%; padding:10px;
+  background:rgba(48,80,160,.08); border:1px dashed rgba(48,80,160,.3);
+  font-family:'Inconsolata',monospace; font-size:.48rem;
+  letter-spacing:.25em; text-transform:uppercase; color:var(--blue);
+  cursor:none; transition:all .2s;
+}
+.coord-map-btn:hover { background:rgba(48,80,160,.15); }
+.coord-map-btn.active { background:var(--blue); color:#fff; border-style:solid; }
+
+/* Upload photos */
+.photo-upload { border:1px dashed rgba(196,160,96,.4); padding:20px; text-align:center; cursor:none; transition:border-color .2s; position:relative; }
+.photo-upload:hover { border-color:var(--blue); }
+.photo-upload input { position:absolute; inset:0; opacity:0; cursor:none; width:100%; height:100%; }
+.photo-upload-icon { font-size:1.4rem; opacity:.3; margin-bottom:6px; }
+.photo-upload p { font-size:.48rem; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+.photo-previews { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.photo-preview-item { position:relative; width:70px; height:70px; }
+.photo-preview-item img { width:100%; height:100%; object-fit:cover; filter:grayscale(20%); }
+.photo-preview-del { position:absolute; top:-5px; right:-5px; width:16px; height:16px; background:var(--red); color:#fff; border:none; border-radius:50%; font-size:.5rem; display:flex; align-items:center; justify-content:center; cursor:none; }
+
+/* Difficulté */
+.diff-select { display:flex; gap:6px; flex-wrap:wrap; }
+.diff-btn { padding:6px 12px; border:1px solid rgba(196,160,96,.3); background:none; font-family:'Inconsolata',monospace; font-size:.48rem; letter-spacing:.2em; color:var(--muted); cursor:none; transition:all .15s; }
+.diff-btn.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+/* Durée */
+.duree-row { display:grid; grid-template-columns:1fr auto 1fr; gap:6px; align-items:center; }
+.duree-sep { font-size:.8rem; color:var(--muted); text-align:center; }
+
+.modal-footer { padding:16px 24px 24px; display:flex; gap:12px; justify-content:flex-end; border-top:1px solid rgba(196,160,96,.2); }
+.btn-cancel { padding:11px 22px; background:none; border:1px solid rgba(196,160,96,.3); font-family:'Inconsolata',monospace; font-size:.5rem; letter-spacing:.3em; text-transform:uppercase; color:var(--muted); cursor:none; transition:all .2s; }
+.btn-cancel:hover { border-color:var(--ink); color:var(--ink); }
+.btn-save { padding:11px 28px; background:var(--blue); color:#fff; border:none; font-family:'Inconsolata',monospace; font-size:.5rem; letter-spacing:.3em; text-transform:uppercase; cursor:none; transition:background .2s; }
+.btn-save:hover { background:#1a3070; }
+.btn-save:disabled { background:rgba(48,80,160,.3); }
+
+/* ══ TOGGLE PARTAGE ══ */
+.share-toggle {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px;
+  background:rgba(48,80,160,.04);
+  border:1px solid rgba(48,80,160,.15);
+}
+.share-toggle-left { display:flex; flex-direction:column; gap:4px; }
+.share-toggle-label { font-size:.48rem; letter-spacing:.3em; text-transform:uppercase; color:var(--ink); font-weight:600; }
+.share-toggle-desc  { font-size:.46rem; color:var(--muted); line-height:1.6; }
+.toggle-switch { position:relative; width:44px; height:24px; flex-shrink:0; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position:absolute; inset:0; cursor:none;
+  background:rgba(196,160,96,.3); border-radius:24px;
+  transition:background .3s;
+}
+.toggle-slider::before {
+  content:''; position:absolute;
+  width:18px; height:18px; border-radius:50%;
+  left:3px; top:3px;
+  background:#fff; transition:transform .3s;
+  box-shadow:0 1px 4px rgba(0,0,0,.2);
+}
+.toggle-switch input:checked + .toggle-slider { background:var(--blue); }
+.toggle-switch input:checked + .toggle-slider::before { transform:translateX(20px); }
+
+/* ══ TOAST ══ */
+#toast {
+  position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
+  z-index:2000; background:var(--ink); color:var(--paper);
+  font-size:.5rem; letter-spacing:.2em; padding:10px 24px;
+  border-left:3px solid var(--gold);
+  opacity:0; transition:all .4s; white-space:nowrap;
+}
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+#toast.err  { border-left-color:var(--red); }
+
+/* ══ PICKING MODE ══ */
+body.picking-mode,
+body.picking-mode *,
+body.picking-mode #map,
+body.picking-mode #map * { cursor:crosshair !important; }
+body.picking-mode #cur { display:none !important; }
+#pick-banner {
+  position:fixed; top:60px; left:50%; transform:translateX(-50%);
+  z-index:600; background:var(--blue); color:#fff;
+  font-size:.5rem; letter-spacing:.3em; text-transform:uppercase;
+  padding:10px 24px; display:none;
+  box-shadow:0 4px 20px rgba(48,80,160,.4);
+}
+#pick-banner.show { display:block; }
+
+
+.pop-img-wrap { position:relative; aspect-ratio:1; overflow:hidden; cursor:pointer; }
+.pop-img-wrap img { width:100%; height:100%; object-fit:cover; transition:transform .3s; filter:grayscale(10%); }
+.pop-img-wrap:hover img { transform:scale(1.05); }
+.pop-del-img { position:absolute; top:3px; right:3px; z-index:2; width:18px; height:18px; background:var(--red); color:#fff; border:none; border-radius:50%; font-size:.55rem; display:flex; align-items:center; justify-content:center; cursor:none; opacity:0; transition:opacity .2s; }
+.pop-img-wrap:hover .pop-del-img { opacity:1; }
+
+/* ══ MEDIA MOBILE ══ */
+
+/* ── BOUTON PLEIN ÉCRAN (mobile) ── */
+#btn-fullscreen {
+  display:none;
+  position:fixed; bottom:16px; right:16px; z-index:500;
+  background:rgba(237,230,208,.97); border:1px solid rgba(196,160,96,.4);
+  width:40px; height:40px;
+  align-items:center; justify-content:center;
+  font-size:1.1rem; cursor:none;
+  box-shadow:0 2px 10px rgba(0,0,0,.15);
+  transition:background .2s;
+}
+#btn-fullscreen:hover { background:var(--paper); }
+@media (max-width:768px) {
+  #btn-fullscreen { display:flex; }
+}
+@media (max-width:768px) {
+  #instruments,#coords { display:none; }
+  input, textarea, select { font-size:16px !important; }
+  #hud { height:36px; }
+  #map,#ov-sky,#ov-fog,#snow,#altbar { top:36px; }
+  .hud-brand span { font-size:.85rem; letter-spacing:.15em; }
+  .hud-block:nth-child(n+4) { display:none; }
+  .hud-block { padding:0 8px; min-width:60px; }
+  .hud-label { font-size:.38rem; letter-spacing:.15em; }
+  .hud-val   { font-size:.72rem; }
+  #carnet { width:100%; top:36px; }
+  .form-row { grid-template-columns:1fr; }
+  .form-field.full { grid-column:span 1; }
+  #fab { bottom:16px; }
+  .modal { max-width:100%; max-height:95vh; }
+  .hud-user-name { display:none; }
+}
+
+/* ══ LEAFLET OVERRIDES ══ */
+.leaflet-control-zoom { display:none !important; }
+.leaflet-control-attribution { font-family:'Inconsolata',monospace !important; font-size:.34rem !important; background:rgba(237,230,208,.85) !important; border-radius:0 !important; color:var(--muted) !important; }
+.leaflet-container { cursor:none !important; }
+.leaflet-grab { cursor:none !important; }
+</style>
+</head>
+<body>
+
+<div id="cur"><div class="ch"></div><div class="cv"></div></div>
+<div id="tt"></div>
+<div id="toast"></div>
+<div id="pick-banner">Cliquez sur la carte pour placer votre repère · Échap pour annuler</div>
+
+<!-- ══════════════ ÉCRAN AUTH ══════════════ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">Helimea</div>
+    <div class="auth-sub">Carnet d'ascensions</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Connexion</button>
+      <button class="auth-tab" onclick="switchTab('register')">Créer un compte</button>
+    </div>
+    <div id="auth-err" class="auth-err"></div>
+
+    <!-- Login -->
+    <div id="form-login" class="auth-form">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="votre@email.com" autocomplete="email"/>
+      </div>
+      <div class="auth-field">
+        <label>Mot de passe</label>
+        <input type="password" id="login-pw" placeholder="••••••••"/>
+      </div>
+      <button class="auth-btn" onclick="doLogin()">Se connecter →</button>
+    </div>
+
+    <!-- Register -->
+    <div id="form-register" class="auth-form" style="display:none">
+      <div class="auth-field">
+        <label>Prénom</label>
+        <input type="text" id="reg-name" placeholder="Votre prénom"/>
+      </div>
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="votre@email.com" autocomplete="email"/>
+      </div>
+      <div class="auth-field">
+        <label>Mot de passe</label>
+        <input type="password" id="reg-pw" placeholder="Minimum 6 caractères"/>
+      </div>
+      <button class="auth-btn" onclick="doRegister()">Créer mon carnet →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ HUD ══════════════ -->
+<div id="hud">
+  <div class="hud-brand"><span>HELIMEA</span></div>
+  <div class="hud-block"><div class="hud-label">Altitude curseur</div><div class="hud-val" id="hAlt">— m</div></div>
+  <div class="hud-block"><div class="hud-label">Température</div><div class="hud-val" id="hTemp">— °C</div></div>
+  <div class="hud-block"><div class="hud-label">Pression</div><div class="hud-val" id="hPres">— hPa</div></div>
+  <div class="hud-right">
+    <button class="hud-btn" onclick="toggleCarnet()">☰ Mon Carnet</button>
+    <div class="hud-user">
+      <span class="hud-user-name" id="hud-user-name">—</span>
+      <span id="admin-badge" style="display:none;align-items:center;padding:2px 8px;background:var(--red);color:#fff;font-size:.38rem;letter-spacing:.3em;margin-left:6px;">ADMIN</span>
+    </div>
+    <button class="hud-btn accent" onclick="doLogout()">Déconnexion</button>
+  </div>
+</div>
+
+<div id="altbar"><div id="altfill"></div></div>
+<div id="map"></div>
+<div id="ov-sky"></div>
+<div id="ov-fog"></div>
+<canvas id="snow"></canvas>
+
+<div class="cloud" id="cld1" style="top:10%;left:-5%">
+  <svg width="340" height="115" viewBox="0 0 340 115">
+    <ellipse cx="170" cy="82" rx="148" ry="40" fill="white" opacity=".82"/>
+    <ellipse cx="118" cy="64" rx="86"  ry="38" fill="white" opacity=".82"/>
+    <ellipse cx="226" cy="67" rx="80"  ry="34" fill="white" opacity=".82"/>
+    <ellipse cx="170" cy="54" rx="64"  ry="32" fill="white" opacity=".72"/>
+  </svg>
+</div>
+<div class="cloud" id="cld2" style="top:4%;right:-3%">
+  <svg width="260" height="86" viewBox="0 0 260 86">
+    <ellipse cx="130" cy="60" rx="118" ry="34" fill="white" opacity=".76"/>
+    <ellipse cx="90"  cy="48" rx="68"  ry="30" fill="white" opacity=".76"/>
+    <ellipse cx="178" cy="51" rx="64"  ry="28" fill="white" opacity=".76"/>
+  </svg>
+</div>
+
+<div id="altmsg"></div>
+
+<div id="coords">
+  <div>Lat <b id="ziLat">45.88°N</b></div>
+  <div>Lon <b id="ziLon">6.87°E</b></div>
+</div>
+
+<!-- INSTRUMENTS -->
+<div id="instruments">
+  <div class="instr">
+    <div class="instr-lbl">Temp.</div>
+    <svg width="22" height="80" viewBox="0 0 22 80">
+      <defs><clipPath id="tc"><rect id="tr" x="9" y="59" width="4" height="0"/></clipPath></defs>
+      <rect x="9" y="7" width="4" height="52" rx="2" fill="rgba(196,160,96,.15)" stroke="#a08040" stroke-width="1"/>
+      <rect x="9" y="7" width="4" height="52" rx="2" fill="#c84030" clip-path="url(#tc)"/>
+      <circle cx="11" cy="67" r="7" fill="none" stroke="#a08040" stroke-width="1"/>
+      <circle cx="11" cy="67" r="5" fill="#c84030"/>
+      <g stroke="#a08040" stroke-width=".5">
+        <line x1="13" y1="11" x2="16" y2="11"/><line x1="13" y1="18" x2="16" y2="18"/>
+        <line x1="13" y1="25" x2="16" y2="25"/><line x1="13" y1="32" x2="16" y2="32"/>
+        <line x1="13" y1="39" x2="16" y2="39"/><line x1="13" y1="46" x2="16" y2="46"/>
+        <line x1="13" y1="53" x2="16" y2="53"/>
+      </g>
+    </svg>
+    <div class="instr-val" id="tval">—°</div>
+  </div>
+  <div class="instr">
+    <div class="instr-lbl">Pression</div>
+    <svg width="64" height="64" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="28" fill="none" stroke="#a08040" stroke-width="1"/>
+      <circle cx="32" cy="32" r="23" fill="none" stroke="#a08040" stroke-width=".4"/>
+      <g stroke="#a08040" stroke-width=".7">
+        <line x1="32" y1="5"  x2="32" y2="10"/><line x1="59" y1="32" x2="54" y2="32"/>
+        <line x1="32" y1="59" x2="32" y2="54"/><line x1="5"  y1="32" x2="10" y2="32"/>
+        <line x1="52.2" y1="11.8" x2="48.7" y2="15.3"/>
+        <line x1="52.2" y1="52.2" x2="48.7" y2="48.7"/>
+        <line x1="11.8" y1="52.2" x2="15.3" y2="48.7"/>
+        <line x1="11.8" y1="11.8" x2="15.3" y2="15.3"/>
+      </g>
+      <g font-family="Inconsolata" font-size="5.2" fill="#a08040" text-anchor="middle">
+        <text x="32" y="21">BEAU</text><text x="51" y="36">SEC</text>
+        <text x="32" y="51">PLUIE</text><text x="13" y="36">TEMP</text>
+      </g>
+      <line id="baro" x1="32" y1="32" x2="32" y2="9" stroke="#c84030" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="2.5" fill="#c84030"/>
+    </svg>
+    <div class="instr-val" id="bval">— hPa</div>
+  </div>
+  <div class="instr">
+    <div class="instr-lbl">Nord</div>
+    <svg width="58" height="58" viewBox="0 0 58 58">
+      <circle cx="29" cy="29" r="26" fill="none" stroke="#a08040" stroke-width="1"/>
+      <circle cx="29" cy="29" r="21" fill="none" stroke="#a08040" stroke-width=".4"/>
+      <g id="rose">
+        <polygon points="29,8 32,24 29,22 26,24"  fill="#c84030"/>
+        <polygon points="29,50 32,34 29,36 26,34" fill="#a08040"/>
+        <line x1="8" y1="29" x2="50" y2="29" stroke="#a08040" stroke-width=".6"/>
+        <g font-family="Inconsolata" font-size="6.5" fill="#2a2015" text-anchor="middle">
+          <text x="29" y="7">N</text><text x="29" y="56">S</text>
+          <text x="5"  y="31">O</text><text x="54" y="31">E</text>
+        </g>
+      </g>
+      <circle cx="29" cy="29" r="2.5" fill="#c84030"/>
+    </svg>
+    <div class="instr-val">E 1.5°</div>
+  </div>
+</div>
+
+<!-- ══ FAB ══ -->
+<button id="fab" class="visible" onclick="openModal()">+ Ajouter un repère</button>
+
+<!-- ══════════════ CARNET SIDEBAR ══════════════ -->
+<div id="carnet">
+  <div class="carnet-header">
+    <div class="carnet-title">Mon Carnet</div>
+    <button class="carnet-close" onclick="toggleCarnet()">✕ Fermer</button>
+  </div>
+  <div class="carnet-stats" id="carnet-stats">
+    <div class="cs-block"><div class="cs-num" id="stat-count">0</div><div class="cs-label">Ascensions</div></div>
+    <div class="cs-block"><div class="cs-num" id="stat-dplus">0</div><div class="cs-label">Dénivelé +</div></div>
+    <div class="cs-block"><div class="cs-num" id="stat-km">0</div><div class="cs-label">km total</div></div>
+  </div>
+  <div class="carnet-list" id="carnet-list">
+    <div class="carnet-empty">
+      <div class="carnet-empty-icon">▲</div>
+      <p>Aucune ascension enregistrée.<br>Ajoutez votre premier repère<br>sur la carte.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL AJOUT ══════════════ -->
+<div id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Nouveau repère</div>
+      <div class="modal-sub" id="modal-sub">Enregistrer une ascension</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Nom + Date -->
+      <div class="form-row">
+        <div class="form-field">
+          <label>Nom du sommet / lieu</label>
+          <input type="text" id="f-name" placeholder="Mont Blanc"/>
+        </div>
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" id="f-date"/>
+        </div>
+      </div>
+
+      <!-- Coordonnées -->
+      <div class="coord-section">
+        <div class="coord-title">Localisation</div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Latitude</label>
+            <input type="number" id="f-lat" placeholder="45.8326" step="0.0001"/>
+          </div>
+          <div class="form-field">
+            <label>Longitude</label>
+            <input type="number" id="f-lon" placeholder="6.8652" step="0.0001"/>
+          </div>
+        </div>
+        <button class="coord-map-btn" id="pick-btn" onclick="startPicking()">
+          ⊕ Cliquer sur la carte pour placer le repère
+        </button>
+        <div class="coord-hint">
+          Astuce : sur Google Maps, clic droit → les coordonnées apparaissent en haut du menu contextuel.
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="form-row">
+        <div class="form-field">
+          <label>Altitude (m)</label>
+          <input type="number" id="f-alt" placeholder="4808"/>
+        </div>
+        <div class="form-field">
+          <label>Dénivelé + (m)</label>
+          <input type="number" id="f-dplus" placeholder="1200"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Distance (km)</label>
+          <input type="number" id="f-dist" placeholder="14.5" step="0.1"/>
+        </div>
+        <div class="form-field">
+          <label>Durée</label>
+          <div class="duree-row">
+            <input type="number" id="f-h" placeholder="6" min="0" max="99"/>
+            <div class="duree-sep">h</div>
+            <input type="number" id="f-min" placeholder="30" min="0" max="59"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Difficulté -->
+      <div class="form-field">
+        <label>Difficulté</label>
+        <div class="diff-select" id="diff-select">
+          <button class="diff-btn" onclick="setDiff(this,'F')">F — Facile</button>
+          <button class="diff-btn" onclick="setDiff(this,'PD')">PD</button>
+          <button class="diff-btn" onclick="setDiff(this,'AD')">AD</button>
+          <button class="diff-btn" onclick="setDiff(this,'D')">D</button>
+          <button class="diff-btn" onclick="setDiff(this,'TD')">TD</button>
+          <button class="diff-btn" onclick="setDiff(this,'ED')">ED</button>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="form-field">
+        <label>Notes &amp; souvenirs</label>
+        <textarea id="f-notes" rows="3" placeholder="Conditions, équipement, anecdotes…"></textarea>
+      </div>
+
+      <!-- Partage carte communautaire -->
+      <div class="share-toggle">
+        <div class="share-toggle-left">
+          <span class="share-toggle-label">Partager sur la carte commune</span>
+          <span class="share-toggle-desc">Visible par tous les membres Helimea</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="f-shared" checked/>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Photos -->
+      <div class="form-field">
+        <label>Photos</label>
+        <div class="photo-upload">
+          <input type="file" id="f-photos" accept="image/*" multiple onchange="previewPhotos(this)"/>
+          <div class="photo-upload-icon">📷</div>
+          <p>Cliquer pour ajouter des photos</p>
+        </div>
+        <div class="photo-previews" id="photo-previews"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" id="btn-save" onclick="saveRepere()">Enregistrer l'ascension</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MARQUEURS HELIMEA (fixes) ══════════════ -->
+<script>
+var SUMMITS = [
+  {lat:45.4028,lon:5.5004,name:'Dent du Chat',alt:1390,tag:'Chartreuse · 1390 m',desc:'Sommet emblématique dominant le lac du Bourget.',images:[]},
+  {lat:44.9711,lon:6.0651,name:'Lac Lauvitel',alt:1530,tag:'Écrins · 1530 m',desc:'Plus grand lac naturel du Parc national des Écrins.',images:[]},
+  {lat:45.1050,lon:5.7200,name:'Les Moucherottes',alt:1901,tag:'Vercors · 1901 m',desc:'Belvédère dominant Grenoble.',images:[]},
+  {lat:45.5370,lon:6.5730,name:'Arêche-Beaufort',alt:1080,tag:'Beaufortain · 1080 m',desc:'Village au cœur du Beaufortain.',images:[]},
+  {lat:45.8326,lon:6.8652,name:'Mont Blanc',alt:4808,tag:'Mont-Blanc · 4808 m',desc:'Plus haut sommet des Alpes.',images:[]},
+  {lat:45.8787,lon:6.8698,name:'Aiguille du Midi',alt:3842,tag:'Mont-Blanc · 3842 m',desc:'Point de départ pour la Vallée Blanche.',images:[]},
+  {lat:45.9237,lon:6.8697,name:'Chamonix-Mont-Blanc',alt:1035,tag:'Haute-Savoie · 1035 m',desc:'Capitale mondiale de l\'alpinisme.',images:[]}
+];
+
+// ── Globals ──
+// ══ CONFIGURATION MODÉRATEUR ══
+// Remplace par l'email de ton compte admin
+var ADMIN_EMAIL = 'tinoomm@helimea.com'; // ← CHANGER ICI
+
+var map, currentUser = null, userMarkers = [], pendingPhotos = [], selectedDiff = '', editingId = null;
+var allReperes = []; // Cache global de tous les repères (carte communautaire)
+var pickingMode = false, tempPickMarker = null;
+var PRES_MIN, PRES_MAX = 1013;
+
+// ── Init carte ──
+function initMap() {
+  var isMobile = window.innerWidth < 768;
+  map = L.map('map',{center:isMobile?[45.6,6.5]:[45.88,6.87], zoom:isMobile?8:11, zoomControl:false, scrollWheelZoom:true, dragging:true, doubleClickZoom:true});
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© <a href="https://opentopomap.org">OpenTopoMap</a> · © OpenStreetMap contributors'}).addTo(map);
+
+  // N&B tuiles
+  var obs = new MutationObserver(function(){
+    document.querySelectorAll('#map .leaflet-tile:not([data-s])').forEach(function(t){
+      t.style.filter='grayscale(100%) contrast(1.1) brightness(.95)';
+      t.setAttribute('data-s','1');
+    });
+  });
+  obs.observe(document.getElementById('map'),{childList:true,subtree:true});
+
+  function fixCursor(){ document.querySelectorAll('#map,#map *,.leaflet-container').forEach(function(el){el.style.cursor='none';}); }
+  setTimeout(fixCursor,600);
+
+  // Carte vierge — aucun marqueur fixe
+
+  // Clic carte → placement repère ou coordonnées
+  map.on('click',function(e){
+    if(pickingMode){
+      document.getElementById('f-lat').value = e.latlng.lat.toFixed(5);
+      document.getElementById('f-lon').value = e.latlng.lng.toFixed(5);
+      if(tempPickMarker) map.removeLayer(tempPickMarker);
+      tempPickMarker = L.circleMarker([e.latlng.lat,e.latlng.lng],{radius:7,color:'#3050a0',fillColor:'#3050a0',fillOpacity:.7,weight:2}).addTo(map);
+      stopPicking(true);
+    }
+  });
+
+  map.on('mousemove',function(e){
+    if(pickingMode) return;
+    var alt=estAlt(e.latlng.lat,e.latlng.lng);
+    updateAll(alt); updateCoords(e.latlng.lat,e.latlng.lng); checkMsg(alt);
+  });
+  map.on('zoomend',function(){
+    var z=map.getZoom();
+    setTimeout(function(){ document.querySelectorAll('#map .leaflet-tile:not([data-s])').forEach(function(t){ t.style.filter='grayscale(100%) contrast(1.1) brightness(.95)'; t.setAttribute('data-s','1'); }); fixCursor(); },500);
+  });
+  map.on('moveend',function(){ var c=map.getCenter(); updateCoords(c.lat,c.lng); });
+  map.on('dragend',fixCursor);
+
+  PRES_MIN = calcPres(4808);
+  updateAll(1035); updateCoords(45.88,6.87);
+}
+
+// ── Physique ──
+function estAlt(lat,lon){
+  var num=0,den=0;
+  SUMMITS.forEach(function(s){ var d2=(lat-s.lat)*(lat-s.lat)+(lon-s.lon)*(lon-s.lon); var w=Math.exp(-d2*200);num+=s.alt*w;den+=w; });
+  return Math.round(Math.max(400,Math.min(4808,den>1e-10?num/den:1000)));
+}
+function calcTemp(alt){ return Math.round((12-(alt-1035)*0.0065)*10)/10; }
+function calcPres(alt){ return Math.round(1013.25*Math.pow(1-alt/44330,5.2553)); }
+
+function updateAll(alt){
+  var temp=calcTemp(alt),pres=calcPres(alt);
+  document.getElementById('hAlt').textContent=alt.toLocaleString('fr')+' m';
+  document.getElementById('hTemp').textContent=(temp>=0?'+':'')+temp.toFixed(1)+' °C';
+  document.getElementById('hPres').textContent=pres+' hPa';
+  var ap=Math.max(0,Math.min(1,(alt-400)/(4808-400)));
+  document.getElementById('altfill').style.height=(ap*100)+'%';
+  var tn=Math.max(0,Math.min(1,(temp+25)/37)),th=Math.round(tn*51),ty=59-th;
+  document.getElementById('tr').setAttribute('y',ty); document.getElementById('tr').setAttribute('height',th);
+  document.getElementById('tval').textContent=(temp>=0?'+':'')+temp.toFixed(1)+'°';
+  var pn=Math.max(0,Math.min(1,(pres-PRES_MIN)/(PRES_MAX-PRES_MIN)));
+  document.getElementById('baro').setAttribute('transform','rotate('+(-90+(1-pn)*180)+' 32 32)');
+  document.getElementById('bval').textContent=pres+' hPa';
+  var sky=document.getElementById('ov-sky');
+  sky.style.background=alt>1800?'rgba(70,110,200,'+(Math.min(1,(alt-1800)/3008)*0.22).toFixed(3)+')':'transparent';
+  document.getElementById('snow').style.opacity=Math.max(0,Math.min(1,(alt-2800)/2008));
+  snowActive=alt>2600;
+  document.getElementById('ov-fog').style.opacity=Math.max(0,Math.min(.6,(alt-3400)/1408));
+  var cl=alt>2000;
+  document.getElementById('cld1').classList.toggle('show',cl);
+  document.getElementById('cld2').classList.toggle('show',cl);
+}
+function updateCoords(lat,lon){
+  document.getElementById('ziLat').textContent=Math.abs(lat).toFixed(4)+'°'+(lat>=0?'N':'S');
+  document.getElementById('ziLon').textContent=Math.abs(lon).toFixed(4)+'°'+(lon>=0?'E':'O');
+}
+
+// Messages altitude
+var ALT_MSGS=[{t:1800,m:'↑ Zone alpine — forêts de mélèzes'},{t:2500,m:'↑ Haute montagne — 2500 m'},{t:3000,m:'↑ 3000 m — névés permanents'},{t:3500,m:'↑ Neige éternelle — 3500 m'},{t:4000,m:'↑ 4000 m — air raréfié'},{t:4500,m:'↑ Approche du sommet'},{t:4780,m:'↑ Mont Blanc — 4808 m'}];
+var shownMsgs={},msgTmr=null;
+function checkMsg(alt){ ALT_MSGS.forEach(function(a){ if(alt>=a.t&&!shownMsgs[a.t]){shownMsgs[a.t]=true;showMsg(a.m);} if(alt<a.t-150){shownMsgs[a.t]=false;} }); }
+function showMsg(txt){ var el=document.getElementById('altmsg'); el.textContent=txt; el.classList.add('show'); clearTimeout(msgTmr); msgTmr=setTimeout(function(){el.classList.remove('show');},3200); }
+
+// Neige
+var snowCvs=document.getElementById('snow'),sCtx=snowCvs.getContext('2d'),snowActive=false;
+function resizeSnow(){snowCvs.width=window.innerWidth;snowCvs.height=window.innerHeight;}
+resizeSnow(); window.addEventListener('resize',function(){resizeSnow();if(map)map.invalidateSize();});
+var flakes=[];
+for(var i=0;i<160;i++) flakes.push({x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,r:Math.random()*2.2+0.4,vx:(Math.random()-.5)*.5,vy:Math.random()*1.1+0.3,op:Math.random()*.6+0.2});
+function animSnow(){ sCtx.clearRect(0,0,snowCvs.width,snowCvs.height); if(snowActive) flakes.forEach(function(p){ p.x+=p.vx;p.y+=p.vy; if(p.y>snowCvs.height)p.y=-4;if(p.x>snowCvs.width)p.x=0;if(p.x<0)p.x=snowCvs.width; sCtx.beginPath();sCtx.arc(p.x,p.y,p.r,0,Math.PI*2);sCtx.fillStyle='rgba(255,255,255,'+p.op+')';sCtx.fill(); }); requestAnimationFrame(animSnow); }
+animSnow();
+
+// Curseur
+var cur=document.getElementById('cur'),mx=0,my=0;
+document.addEventListener('mousemove',function(e){mx=e.clientX;my=e.clientY;});
+(function animCur(){cur.style.left=mx+'px';cur.style.top=my+'px';requestAnimationFrame(animCur);})();
+
+// Tooltip
+var ttEl=document.getElementById('tt');
+function showTT(txt){ttEl.textContent=txt;ttEl.classList.add('show');}
+function hideTT(){ttEl.classList.remove('show');}
+document.addEventListener('mousemove',function(e){ttEl.style.left=(e.clientX+18)+'px';ttEl.style.top=(e.clientY-6)+'px';});
+
+// Toast
+var toastTmr;
+function toast(msg,err){
+  var el=document.getElementById('toast');
+  el.textContent=msg; el.className=''; el.classList.add('show');
+  if(err) el.classList.add('err');
+  clearTimeout(toastTmr); toastTmr=setTimeout(function(){el.classList.remove('show');},3000);
+}
+
+// ── AUTH UI ──
+function switchTab(tab){
+  document.querySelectorAll('.auth-tab').forEach(function(t){ t.classList.remove('active'); });
+  event.target.classList.add('active');
+  document.getElementById('form-login').style.display = tab==='login'?'flex':'none';
+  document.getElementById('form-register').style.display = tab==='register'?'flex':'none';
+  document.getElementById('auth-err').textContent='';
+}
+function authErr(msg){ document.getElementById('auth-err').textContent=msg; }
+
+function doLogin(){
+  var fb=window._FB; if(!fb){authErr('Firebase non configuré');return;}
+  var email=document.getElementById('login-email').value.trim();
+  var pw=document.getElementById('login-pw').value;
+  if(!email||!pw){authErr('Remplis tous les champs');return;}
+  fb.signInWithEmailAndPassword(fb.auth,email,pw).catch(function(e){
+    authErr(e.code==='auth/invalid-credential'?'Email ou mot de passe incorrect':e.message);
+  });
+}
+function doRegister(){
+  var fb=window._FB; if(!fb){authErr('Firebase non configuré');return;}
+  var name=document.getElementById('reg-name').value.trim();
+  var email=document.getElementById('reg-email').value.trim();
+  var pw=document.getElementById('reg-pw').value;
+  if(!name||!email||!pw){authErr('Remplis tous les champs');return;}
+  if(pw.length<6){authErr('Mot de passe trop court (6 min)');return;}
+  fb.createUserWithEmailAndPassword(fb.auth,email,pw).then(function(uc){
+    return fb.updateProfile(uc.user,{displayName:name});
+  }).catch(function(e){
+    authErr(e.code==='auth/email-already-in-use'?'Email déjà utilisé':e.message);
+  });
+}
+function doLogout(){
+  var fb=window._FB; if(!fb)return;
+  fb.signOut(fb.auth);
+}
+
+// ── AUTH STATE ──
+window.addEventListener('fb-ready',function(){
+  var fb=window._FB;
+  fb.onAuthStateChanged(fb.auth,function(user){
+    currentUser=user;
+    if(user){
+      // Connecté → masquer auth
+      document.getElementById('auth-screen').classList.add('hide');
+      document.getElementById('hud-user-name').textContent=(user.displayName||user.email).split(' ')[0];
+      if(!map) initMap();
+      loadReperes();
+    } else {
+      document.getElementById('auth-screen').classList.remove('hide');
+      clearUserMarkers();
+    }
+  });
+});
+
+// ── CARNET ──
+function toggleCarnet(){
+  document.getElementById('carnet').classList.toggle('open');
+}
+
+// ── LOAD depuis Firestore ──
+function loadReperes(){
+  if(!currentUser||!window._FB) return;
+  var fb=window._FB;
+  var isAdmin = currentUser.email === ADMIN_EMAIL;
+  // Charger TOUS les repères pour la carte communautaire
+  fb.getDocs(fb.collection(fb.db,'reperes')).then(function(snap){
+    allReperes=[];
+    snap.forEach(function(d){ allReperes.push({id:d.id,...d.data()}); });
+    // Trier par date décroissante
+    allReperes.sort(function(a,b){ return (b.createdAt||'') > (a.createdAt||'') ? 1 : -1; });
+    renderMapMarkers(allReperes);
+    // Carnet = repères de l'utilisateur courant (ou tous si admin)
+    var myReperes = isAdmin ? allReperes : allReperes.filter(function(r){ return r.uid===currentUser.uid; });
+    renderReperes(myReperes, isAdmin);
+    if(isAdmin) showAdminBadge();
+  }).catch(function(e){ console.error(e); toast('Erreur chargement',true); });
+}
+
+function showAdminBadge(){
+  var badge = document.getElementById('admin-badge');
+  if(badge) badge.style.display='flex';
+}
+
+// ── RENDER CARNET + MARQUEURS ──
+function clearUserMarkers(){
+  userMarkers.forEach(function(m){ if(map)map.removeLayer(m); });
+  userMarkers=[];
+}
+
+// Affiche les repères sur la carte communautaire
+function renderMapMarkers(reperes){
+  clearUserMarkers();
+  reperes.forEach(function(r){
+    if(!r.lat||!r.lon||!map) return;
+    var isOwn = currentUser && r.uid===currentUser.uid;
+    var isAdmin = currentUser && currentUser.email===ADMIN_EMAIL;
+    // Afficher si : partagé OU c'est le sien OU admin
+    if(!r.shared && !isOwn && !isAdmin) return;
+    var isAdmin = currentUser && currentUser.email===ADMIN_EMAIL;
+    var color = isOwn ? '#3050a0' : '#c84030';
+    var icon=L.divIcon({
+      className:'user-mk-wrap',
+      html:'<div style="position:relative;display:inline-block;text-align:center">'
+          +'<div class="user-mk-label" style="background:'+color+'">'+escHtml(r.name)+'</div>'
+          +'<svg width="22" height="18" viewBox="0 0 22 18" xmlns="http://www.w3.org/2000/svg" style="display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">'
+          +'<polygon points="11,1 21,17 1,17" fill="'+color+'" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>'
+          +'<polygon points="11,5 17,17 5,17" fill="'+color+'" opacity="0.6"/>'
+          +'</svg>'
+          +'</div>',
+      iconAnchor:[11,18]
+    });
+    var mk=L.marker([r.lat,r.lon],{icon:icon,interactive:true}).addTo(map);
+    mk.on('click',(function(rep){ return function(){ openReperePopup(rep); }; })(r));
+    mk.on('mouseover',(function(rep){ return function(){ showTT(rep.name+(rep.alt?' · '+parseInt(rep.alt).toLocaleString('fr')+' m':'')+(rep.userName?' — '+rep.userName:'')); }; })(r));
+    mk.on('mouseout',hideTT);
+    userMarkers.push(mk);
+  });
+}
+
+// Popup au clic sur un repère communautaire
+function openReperePopup(r){
+  var isOwn   = currentUser && r.uid === currentUser.uid;
+  var isAdmin = currentUser && currentUser.email === ADMIN_EMAIL;
+  var dateStr = r.date ? new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '';
+
+  // Nom + auteur
+  document.getElementById('pop-name').textContent = r.name || '—';
+  document.getElementById('pop-user').textContent = (r.userName||'Membre') + (dateStr?' · '+dateStr:'');
+
+  // Stats tags
+  var tags = '';
+  if(r.alt)   tags += '<span class="asc-tag">▲ '+parseInt(r.alt).toLocaleString('fr')+' m</span>';
+  if(r.dplus) tags += '<span class="asc-tag">↑ +'+parseInt(r.dplus).toLocaleString('fr')+' m D+</span>';
+  if(r.dist)  tags += '<span class="asc-tag">⟷ '+r.dist+' km</span>';
+  if(r.duree) tags += '<span class="asc-tag">⏱ '+r.duree+'</span>';
+  if(r.diff)  tags += '<span class="asc-tag">'+r.diff+'</span>';
+  var tagsEl = document.getElementById('pop-tags');
+  tagsEl.innerHTML = tags;
+  tagsEl.style.display = tags ? 'flex' : 'none';
+
+  // Notes
+  var notesWrap = document.getElementById('pop-notes-wrap');
+  var notesEl   = document.getElementById('pop-notes');
+  if(r.notes){ notesEl.textContent = r.notes; notesWrap.style.display='block'; }
+  else { notesWrap.style.display='none'; }
+
+  // Photos
+  var imgsWrap = document.getElementById('pop-imgs-wrap');
+  var imgsEl   = document.getElementById('pop-imgs');
+  if(r.photos && r.photos.length){
+    imgsWrap.style.display = 'block';
+    imgsEl.innerHTML = r.photos.map(function(url, i){
+      var delBtn = (isOwn||isAdmin)
+        ? '<button class="pop-del-img" onclick="deletePhoto(\x27'+r.id+'\x27,'+i+',event)" title="Supprimer">×</button>'
+        : '';
+      return '<div class="pop-img-wrap">'+delBtn+'<img src="'+url+'" loading="lazy" onclick="openLightbox(this.src)"/></div>';
+    }).join('');
+  } else {
+    imgsWrap.style.display = 'none';
+    imgsEl.innerHTML = '';
+  }
+
+  // Boutons actions (modifier / supprimer)
+  var actionsEl = document.getElementById('pop-actions');
+  var btns = '';
+  if(isOwn)         btns += '<button class="asc-action-btn" onclick="editRepere(\x27'+r.id+'\x27,null);closePopup()">✎ Modifier</button>';
+  if(isOwn||isAdmin)btns += '<button class="asc-action-btn danger" onclick="deleteRepere(\x27'+r.id+'\x27,null)">✕ Supprimer</button>';
+  actionsEl.innerHTML = btns;
+  actionsEl.style.display = btns ? 'flex' : 'none';
+
+  // Ouvrir le popup (flex pour centrer)
+  var popup = document.getElementById('popup-overlay');
+  popup.style.display = 'flex';
+}
+
+function closePopup(){
+  document.getElementById('popup-overlay').style.display = 'none';
+}
+
+function deletePhoto(repereId, photoIdx, e){
+  if(e) e.stopPropagation();
+  if(!confirm('Supprimer cette photo ?')) return;
+  var fb=window._FB; if(!fb)return;
+  var r = allReperes.find(function(x){return x.id===repereId;});
+  if(!r||!r.photos) return;
+  var newPhotos = r.photos.filter(function(_,i){ return i!==photoIdx; });
+  fb.setDoc(fb.doc(fb.db,'reperes',repereId),{photos:newPhotos},{merge:true}).then(function(){
+    toast('Photo supprimée ✓'); loadReperes(); closePopup();
+  }).catch(function(){ toast('Erreur',true); });
+}
+
+function openLightbox(url){
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightbox-img').src = url;
+  lb.style.display='flex';
+}
+
+function renderReperes(reperes, isAdmin){
+  var list=document.getElementById('carnet-list');
+
+  // Stats globales
+  var totalD=0,totalKm=0;
+  reperes.forEach(function(r){
+    totalD+=(parseFloat(r.dplus)||0);
+    totalKm+=(parseFloat(r.dist)||0);
+  });
+  document.getElementById('stat-count').textContent=reperes.length;
+  document.getElementById('stat-dplus').textContent=totalD>999?Math.round(totalD/100)/10+'k':totalD;
+  document.getElementById('stat-km').textContent=Math.round(totalKm*10)/10;
+
+  if(!reperes.length){
+    list.innerHTML='<div class="carnet-empty"><div class="carnet-empty-icon">▲</div><p>Aucune ascension enregistrée.<br>Ajoutez votre premier repère<br>sur la carte.</p></div>';
+    return;
+  }
+
+  list.innerHTML='';
+  reperes.forEach(function(r){
+    // Carte
+    var card=document.createElement('div');
+    card.className='ascension-card';
+    var tags='';
+    if(r.alt)  tags+='<span class="asc-tag">'+parseInt(r.alt).toLocaleString('fr')+' m</span>';
+    if(r.dplus)tags+='<span class="asc-tag">+'+parseInt(r.dplus).toLocaleString('fr')+'m D+</span>';
+    if(r.dist) tags+='<span class="asc-tag">'+r.dist+' km</span>';
+    if(r.duree)tags+='<span class="asc-tag">'+r.duree+'</span>';
+    if(r.diff) tags+='<span class="asc-tag">'+r.diff+'</span>';
+    var imgs='';
+    if(r.photos&&r.photos.length) r.photos.slice(0,3).forEach(function(url){ imgs+='<img class="asc-img-thumb" src="'+url+'" loading="lazy"/>'; });
+    var dateStr=r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):'';
+    var rid = r.id;
+    // Stocker les données dans un attribut data pour édition instantanée
+    card.setAttribute('data-repere', JSON.stringify(r));
+    var sharedBadge = r.shared!==false
+      ? '<span style="font-size:.36rem;letter-spacing:.3em;color:var(--blue);border:1px solid rgba(48,80,160,.2);padding:1px 6px;margin-left:6px;">PARTAGÉ</span>'
+      : '<span style="font-size:.36rem;letter-spacing:.3em;color:var(--muted);border:1px solid rgba(160,128,64,.2);padding:1px 6px;margin-left:6px;">PRIVÉ</span>';
+    card.innerHTML=
+      '<div class="asc-header"><div class="asc-name" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'+escHtml(r.name)+sharedBadge+'</div><div class="asc-date">'+dateStr+'</div></div>'
+      +(tags?'<div class="asc-tags">'+tags+'</div>':'')
+      +(r.notes?'<div class="asc-note">'+escHtml(r.notes)+'</div>':'')
+      +(imgs?'<div class="asc-imgs">'+imgs+'</div>':'')
+      +'<div class="asc-actions">'
+      +(r.lat&&r.lon?'<button class="asc-action-btn" onclick="locateRepere('+r.lat+','+r.lon+',event)">→ Voir sur la carte</button>':'')
+      +'<button class="asc-action-btn" onclick="editRepere(\''+rid+'\',event)">✎ Modifier</button>'
+      +'<button class="asc-action-btn danger" onclick="deleteRepere(\''+rid+'\',event)">✕ Supprimer</button>'
+      +'</div>';
+    list.appendChild(card);
+
+    // Marqueur sur carte
+    if(r.lat&&r.lon&&map){
+      var icon=L.divIcon({
+        className:'user-mk-wrap',
+        html:'<div style="position:relative;display:inline-block;text-align:center">'
+            +'<div class="user-mk-label">'+escHtml(r.name)+'</div>'
+            +'<svg width="22" height="18" viewBox="0 0 22 18" xmlns="http://www.w3.org/2000/svg" style="display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">'
+            +'<polygon points="11,1 21,17 1,17" fill="#3050a0" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>'
+            +'<polygon points="11,5 17,17 5,17" fill="#4a6abf" />'
+            +'<polygon points="7,9 11,5 15,9 13,9 13,17 9,17 9,9" fill="white" opacity="0.25"/>'
+            +'</svg>'
+            +'</div>',
+        iconAnchor:[11,18]
+      });
+      var mk=L.marker([r.lat,r.lon],{icon:icon,interactive:true}).addTo(map);
+      mk.on('mouseover',function(){ showTT(r.name+(r.alt?' · '+parseInt(r.alt).toLocaleString('fr')+' m':'')); });
+      mk.on('mouseout',hideTT);
+      userMarkers.push(mk);
+    }
+  });
+}
+
+function locateRepere(lat,lon,e){
+  if(e)e.stopPropagation();
+  if(map){ map.flyTo([lat,lon],13,{duration:1.2}); }
+  document.getElementById('carnet').classList.remove('open');
+}
+
+// ── SUPPRIMER ──
+function editRepere(id,e){
+  if(e)e.stopPropagation();
+  // Lire les données depuis l'attribut data de la carte (instantané, pas de requête réseau)
+  var cards = document.querySelectorAll('.ascension-card');
+  for(var i=0;i<cards.length;i++){
+    var data = cards[i].getAttribute('data-repere');
+    if(data){
+      var r = JSON.parse(data);
+      if(r.id===id){ openModal(r); return; }
+    }
+  }
+}
+
+function deleteRepere(id,e){
+  if(e)e.stopPropagation();
+  if(!confirm('Supprimer cette ascension ?'))return;
+  var fb=window._FB; if(!fb)return;
+  fb.deleteDoc(fb.doc(fb.db,'reperes',id)).then(function(){
+    toast('Ascension supprimée ✓'); closePopup(); loadReperes();
+  }).catch(function(){ toast('Erreur suppression',true); });
+}
+
+// ── MODAL ──
+function openModal(repere){
+  editingId = repere ? repere.id : null;
+  document.getElementById('modal-title').textContent = repere ? 'Modifier le repère' : 'Nouveau repère';
+  document.getElementById('btn-save').textContent = repere ? 'Enregistrer les modifications' : "Enregistrer l'ascension";
+  if(repere){
+    document.getElementById('f-name').value  = repere.name  || '';
+    document.getElementById('f-lat').value   = repere.lat   || '';
+    document.getElementById('f-lon').value   = repere.lon   || '';
+    document.getElementById('f-alt').value   = repere.alt   || '';
+    document.getElementById('f-dplus').value = repere.dplus || '';
+    document.getElementById('f-dist').value  = repere.dist  || '';
+    document.getElementById('f-notes').value = repere.notes || '';
+    document.getElementById('f-date').value  = repere.date  || new Date().toISOString().split('T')[0];
+    if(repere.duree){
+      var parts = repere.duree.match(/(\d+)h(\d+)?/);
+      if(parts){ document.getElementById('f-h').value = parts[1]||''; document.getElementById('f-min').value = parts[2]||''; }
+    }
+    if(repere.diff){
+      document.querySelectorAll('.diff-btn').forEach(function(b){ if(b.textContent.startsWith(repere.diff)){b.classList.add('active');} });
+      selectedDiff = repere.diff;
+    }
+    // Pré-remplir le toggle de partage
+    document.getElementById('f-shared').checked = repere.shared !== false;
+    if(repere.photos&&repere.photos.length){
+      var prev = document.getElementById('photo-previews');
+      prev.innerHTML = repere.photos.map(function(url,i){
+        return '<div class="photo-preview-item">'
+          +'<img src="'+url+'"/>'
+          +'<button class="photo-preview-del" onclick="removePhoto('+i+')" title="Retirer cette photo">×</button>'
+          +'</div>';
+      }).join('');
+      // Garder les photos existantes comme base64 ou URL
+      pendingPhotos = repere.photos.map(function(url){ return {existing:true, dataUrl:url}; });
+    }
+  } else {
+    document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  resetModal();
+}
+function resetModal(){
+  ['f-name','f-lat','f-lon','f-alt','f-dplus','f-dist','f-h','f-min','f-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  document.querySelectorAll('.diff-btn').forEach(function(b){b.classList.remove('active');});
+  selectedDiff=''; pendingPhotos=[]; editingId=null; document.getElementById('f-shared').checked=true;
+  document.getElementById('photo-previews').innerHTML='';
+  document.getElementById('f-photos').value='';
+  document.getElementById('modal-title').textContent='Nouveau repère';
+  document.getElementById('btn-save').textContent="Enregistrer l'ascension";
+  if(tempPickMarker&&map){map.removeLayer(tempPickMarker);tempPickMarker=null;}
+}
+
+// ── PICKING MODE ──
+function startPicking(){
+  closeModal();
+  pickingMode=true;
+  document.body.classList.add('picking-mode');
+  document.getElementById('pick-banner').classList.add('show');
+  document.getElementById('pick-btn').classList.add('active');
+  // Force crosshair sur tous les éléments Leaflet
+  document.querySelectorAll('#map, #map *, .leaflet-container, .leaflet-grab').forEach(function(el){
+    el.style.cursor='crosshair';
+  });
+}
+function stopPicking(success){
+  pickingMode=false;
+  document.body.classList.remove('picking-mode');
+  document.getElementById('pick-banner').classList.remove('show');
+  document.getElementById('pick-btn').classList.remove('active');
+  // Restaurer curseur none
+  document.querySelectorAll('#map, #map *, .leaflet-container, .leaflet-grab').forEach(function(el){
+    el.style.cursor='none';
+  });
+  if(success){
+    setTimeout(openModal,100);
+    toast('Coordonnées placées ✓');
+  }
+}
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&pickingMode) stopPicking(false); });
+
+// ── DIFFICULTÉ ──
+function setDiff(btn,val){
+  document.querySelectorAll('.diff-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  selectedDiff=val;
+}
+
+// ── PHOTOS PREVIEW ──
+function previewPhotos(input){
+  var preview=document.getElementById('photo-previews');
+  var maxTotal = 5;
+  var remaining = maxTotal - pendingPhotos.length;
+  if(remaining <= 0){ toast('Maximum 5 photos par ascension',true); return; }
+  Array.from(input.files).slice(0,remaining).forEach(function(file){
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      var idx = pendingPhotos.length;
+      pendingPhotos.push({dataUrl:ev.target.result,name:file.name});
+      var item=document.createElement('div');
+      item.className='photo-preview-item';
+      item.innerHTML='<img src="'+ev.target.result+'"/><button class="photo-preview-del" onclick="removePhoto('+idx+')">×</button>';
+      preview.appendChild(item);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function removePhoto(i){
+  pendingPhotos.splice(i,1);
+  document.getElementById('f-photos').value='';
+  document.getElementById('photo-previews').innerHTML='';
+  pendingPhotos.forEach(function(p,j){
+    var item=document.createElement('div');
+    item.className='photo-preview-item';
+    item.innerHTML='<img src="'+p.dataUrl+'"/><button class="photo-preview-del" onclick="removePhoto('+j+')">×</button>';
+    document.getElementById('photo-previews').appendChild(item);
+  });
+}
+
+// ── SAVE ──
+function saveRepere(){
+  if(!currentUser||!window._FB){toast('Non connecté',true);return;}
+  var name=document.getElementById('f-name').value.trim();
+  if(!name){toast('Donne un nom à ce repère',true);return;}
+  var lat=parseFloat(document.getElementById('f-lat').value)||null;
+  var lon=parseFloat(document.getElementById('f-lon').value)||null;
+  var h=document.getElementById('f-h').value;
+  var min=document.getElementById('f-min').value;
+  var duree=(h||min)?((h||'0')+'h'+(min?min+'min':'')):'';
+
+  var btn=document.getElementById('btn-save');
+  btn.disabled=true; btn.textContent='Enregistrement…';
+
+  var fb=window._FB;
+
+  // Photos stockées en base64 directement dans Firestore (pas de Storage requis)
+  // Compression légère pour rester sous 1MB par repère
+  var uploads = pendingPhotos.map(function(p){
+    return new Promise(function(resolve){
+      var img = new Image();
+      img.onload = function(){
+        var canvas = document.createElement('canvas');
+        var max = 800;
+        var w = img.width, h = img.height;
+        if(w>max){h=Math.round(h*max/w);w=max;}
+        if(h>max){w=Math.round(w*max/h);h=max;}
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',0.7));
+      };
+      img.src = p.dataUrl;
+    });
+  });
+
+  Promise.all(uploads).then(function(photoUrls){
+    var shared = document.getElementById('f-shared').checked;
+    var data = {
+      uid: currentUser.uid,
+      userName: currentUser.displayName || currentUser.email.split('@')[0],
+      shared: shared,
+      name: name,
+      lat: lat,
+      lon: lon,
+      alt: document.getElementById('f-alt').value||null,
+      dplus: document.getElementById('f-dplus').value||null,
+      dist: document.getElementById('f-dist').value||null,
+      duree: duree||null,
+      diff: selectedDiff||null,
+      date: document.getElementById('f-date').value||null,
+      notes: document.getElementById('f-notes').value.trim()||null,
+      photos: photoUrls,
+      createdAt: editingId ? undefined : new Date().toISOString()
+    };
+    // Supprimer createdAt si undefined (modification)
+    if(!data.createdAt) delete data.createdAt;
+    if(editingId){
+      return fb.setDoc ? fb.setDoc(fb.doc(fb.db,'reperes',editingId),data,{merge:true}) :
+        fb.deleteDoc(fb.doc(fb.db,'reperes',editingId)).then(function(){ return fb.addDoc(fb.collection(fb.db,'reperes'),data); });
+    } else {
+      return fb.addDoc(fb.collection(fb.db,'reperes'),data);
+    }
+  }).then(function(){
+    toast(editingId?'Ascension modifiée ✓':'Ascension enregistrée ✓');
+    closeModal();
+    loadReperes();
+  }).catch(function(e){
+    console.error(e); toast('Erreur : '+e.message,true);
+  }).finally(function(){
+    btn.disabled=false; btn.textContent='Enregistrer l\'ascension';
+  });
+}
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Plein écran mobile ──
+function toggleFullscreen(){
+  var btn = document.getElementById('btn-fullscreen');
+  if(!document.fullscreenElement && !document.webkitFullscreenElement){
+    var el = document.documentElement;
+    if(el.requestFullscreen)       el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    btn.textContent = '✕';
+    btn.title = 'Quitter le plein écran';
+  } else {
+    if(document.exitFullscreen)       document.exitFullscreen();
+    else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    btn.textContent = '⛶';
+    btn.title = 'Plein écran';
+  }
+}
+document.addEventListener('fullscreenchange',     function(){ if(!document.fullscreenElement)       document.getElementById('btn-fullscreen').textContent='⛶'; });
+document.addEventListener('webkitfullscreenchange',function(){ if(!document.webkitFullscreenElement) document.getElementById('btn-fullscreen').textContent='⛶'; });
+</script>
+
+<!-- ══ POPUP REPÈRE COMMUNAUTAIRE ══ -->
+<div id="popup-overlay" style="position:fixed;inset:0;z-index:900;display:none;background:rgba(0,0,0,.5);align-items:flex-end;justify-content:center;" onclick="closePopup()">
+  <div onclick="event.stopPropagation()" style="width:100%;max-width:520px;background:var(--paper);border-top:3px solid var(--blue);max-height:85vh;overflow-y:auto;position:relative;">
+
+    <!-- En-tête -->
+    <div style="padding:20px 20px 14px;border-bottom:1px solid rgba(196,160,96,.2);">
+      <button onclick="closePopup()" style="position:absolute;top:14px;right:14px;background:none;border:1px solid rgba(196,160,96,.3);padding:5px 10px;font-family:'Inconsolata',monospace;font-size:.44rem;letter-spacing:.2em;color:var(--muted);cursor:none;">✕</button>
+      <div id="pop-name" style="font-family:'Cormorant Garamond',serif;font-size:1.6rem;font-weight:600;line-height:1.1;margin-bottom:5px;padding-right:60px;"></div>
+      <div id="pop-user" style="font-size:.42rem;letter-spacing:.25em;color:var(--muted);"></div>
+    </div>
+
+    <!-- Stats -->
+    <div id="pop-tags" style="display:flex;flex-wrap:wrap;gap:6px;padding:14px 20px;border-bottom:1px solid rgba(196,160,96,.1);"></div>
+
+    <!-- Notes -->
+    <div id="pop-notes-wrap" style="padding:14px 20px;border-bottom:1px solid rgba(196,160,96,.1);">
+      <div id="pop-notes" style="font-size:.58rem;font-style:italic;color:#5a5040;line-height:1.9;"></div>
+    </div>
+
+    <!-- Photos -->
+    <div id="pop-imgs-wrap" style="padding:14px 20px;border-bottom:1px solid rgba(196,160,96,.1);">
+      <div style="font-size:.4rem;letter-spacing:.5em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Photos</div>
+      <div id="pop-imgs" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;"></div>
+    </div>
+
+    <!-- Actions -->
+    <div id="pop-actions" style="display:flex;gap:8px;padding:14px 20px;"></div>
+
+  </div>
+</div>
+
+<!-- ══ LIGHTBOX ══ -->
+<div id="lightbox" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.92);align-items:center;justify-content:center;cursor:pointer;">
+  <img id="lightbox-img" style="max-width:95vw;max-height:95vh;object-fit:contain;"/>
+</div>
+
+<button id="btn-fullscreen" onclick="toggleFullscreen()" title="Plein écran">⛶</button>
+</body>
+</html>
